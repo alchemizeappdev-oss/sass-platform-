@@ -1,4 +1,4 @@
-# AI Workforce Platform
+# sass-platform- (AI Workforce Platform)
 
 Production-oriented monorepo for a multi-tenant AI workforce control plane (Phase 1 MVP).
 
