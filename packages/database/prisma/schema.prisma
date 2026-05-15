@@ -1,0 +1,223 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum MembershipRole {
+  owner
+  admin
+  member
+  viewer
+}
+
+enum RunKind {
+  agent
+  workflow
+}
+
+enum RunStatus {
+  queued
+  running
+  succeeded
+  failed
+  cancelled
+}
+
+enum StepStatus {
+  pending
+  running
+  succeeded
+  failed
+  skipped
+}
+
+enum PlanTier {
+  free
+  pro
+  enterprise
+}
+
+model Tenant {
+  id        String   @id @default(cuid())
+  name      String
+  planTier  PlanTier @default(free) @map("plan_tier")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  users            User[]
+  memberships      Membership[]
+  agents           Agent[]
+  workflows        Workflow[]
+  runs             Run[]
+  events           Event[]
+  providerPolicies ProviderPolicy[]
+  usageLedger      UsageLedger[]
+
+  @@map("tenants")
+}
+
+model User {
+  id          String   @id @default(cuid())
+  tenantId    String   @map("tenant_id")
+  email       String
+  authSubject String   @unique @map("auth_subject")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  tenant      Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  memberships Membership[]
+
+  @@unique([tenantId, email])
+  @@index([tenantId])
+  @@map("users")
+}
+
+model Membership {
+  id        String         @id @default(cuid())
+  tenantId  String         @map("tenant_id")
+  userId    String         @map("user_id")
+  role      MembershipRole @default(member)
+  createdAt DateTime       @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, userId])
+  @@map("memberships")
+}
+
+model Agent {
+  id         String   @id @default(cuid())
+  tenantId   String   @map("tenant_id")
+  name       String
+  configJson Json     @default("{}") @map("config_json")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  runs   Run[]
+
+  @@index([tenantId])
+  @@map("agents")
+}
+
+model Workflow {
+  id             String   @id @default(cuid())
+  tenantId       String   @map("tenant_id")
+  name           String
+  triggerType    String   @map("trigger_type")
+  definitionJson Json     @default("{}") @map("definition_json")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@map("workflows")
+}
+
+model Run {
+  id         String     @id @default(cuid())
+  tenantId   String     @map("tenant_id")
+  agentId    String?    @map("agent_id")
+  kind       RunKind
+  status     RunStatus  @default(queued)
+  taskClass  String?    @map("task_class")
+  inputJson  Json?      @map("input_json")
+  errorCode  String?    @map("error_code")
+  startedAt  DateTime?  @map("started_at")
+  finishedAt DateTime?  @map("finished_at")
+  createdAt  DateTime   @default(now()) @map("created_at")
+
+  tenant      Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  agent       Agent?       @relation(fields: [agentId], references: [id], onDelete: SetNull)
+  steps       RunStep[]
+  events      Event[]
+  usageLedger UsageLedger[]
+
+  @@index([tenantId, status])
+  @@index([tenantId, createdAt])
+  @@map("runs")
+}
+
+model RunStep {
+  id         String     @id @default(cuid())
+  runId      String     @map("run_id")
+  stepType   String     @map("step_type")
+  status     StepStatus @default(pending)
+  inputJson  Json?      @map("input_json")
+  outputJson Json?      @map("output_json")
+  startedAt  DateTime?  @map("started_at")
+  finishedAt DateTime?  @map("finished_at")
+
+  run Run @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  @@index([runId])
+  @@map("run_steps")
+}
+
+model Event {
+  id          String   @id @default(cuid())
+  tenantId    String   @map("tenant_id")
+  runId       String   @map("run_id")
+  type        String
+  payloadJson Json     @default("{}") @map("payload_json")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  run    Run    @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  @@index([runId, createdAt])
+  @@index([tenantId, createdAt])
+  @@map("events")
+}
+
+model ProviderPolicy {
+  id                String   @id @default(cuid())
+  tenantId          String   @map("tenant_id")
+  taskClass         String   @map("task_class")
+  primaryModel      String   @map("primary_model")
+  fallbackChainJson Json     @default("[]") @map("fallback_chain_json")
+  maxTokens         Int      @default(4096) @map("max_tokens")
+  timeoutMs         Int      @default(60000) @map("timeout_ms")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, taskClass])
+  @@map("provider_policies")
+}
+
+model UsageLedger {
+  id          String   @id @default(cuid())
+  tenantId    String   @map("tenant_id")
+  runId       String?  @map("run_id")
+  provider    String
+  model       String
+  inputTokens Int      @default(0) @map("input_tokens")
+  outputTokens Int     @default(0) @map("output_tokens")
+  costUsd     Decimal  @default(0) @map("cost_usd") @db.Decimal(12, 6)
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  run    Run?   @relation(fields: [runId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, createdAt])
+  @@map("usage_ledger")
+}
+
+model IdempotencyKey {
+  id        String   @id @default(cuid())
+  tenantId  String   @map("tenant_id")
+  key       String
+  method    String
+  path      String
+  response  Json
+  statusCode Int     @map("status_code")
+  createdAt DateTime @default(now()) @map("created_at")
+  expiresAt DateTime @map("expires_at")
+
+  @@unique([tenantId, key])
+  @@index([expiresAt])
+  @@map("idempotency_keys")
+}
