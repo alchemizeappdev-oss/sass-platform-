@@ -1,22 +1,31 @@
-# sass-platform- (AI Workforce Platform)
+# sass-platform-
 
-Production-oriented monorepo for a multi-tenant AI workforce control plane (Phase 1 MVP).
+**Agentic execution fabric** for multi-tenant operations — not a LangChain wrapper.
 
-## Stack
+The first reference vertical is **autonomous support operations** (triage → draft → approve → send → audit). Other modules (CRM, marketing, codegen) are intentionally deferred.
 
-- **Experience**: Next.js App Router + Tailwind (`apps/web-app`)
-- **Control plane**: Fastify services (`services/api-gateway`, `agent-orchestrator`, `model-router`, `realtime-service`)
-- **Data**: PostgreSQL + Prisma (`packages/database`), Redis + BullMQ
-- **Orchestration**: Temporal worker (`services/temporal-worker-service`), n8n (compose only in Phase 1)
+> **Naming:** GitHub repo is `sass-platform-` under `alchemizeappdev-oss`. Package scope `@ai-workforce/*` avoids collision with unrelated “Alchemize/Alchemy” projects on GitHub.
+
+## Start here
+
+| Doc | Purpose |
+|-----|---------|
+| [docs/MANIFESTO.md](docs/MANIFESTO.md) | Why planning ≠ orchestration ≠ execution |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Canonical execution diagram |
+| [docs/PRIMITIVES.md](docs/PRIMITIVES.md) | Run, Step, Event — do not rename these |
+| [docs/verticals/SUPPORT_OPS.md](docs/verticals/SUPPORT_OPS.md) | **Demo this first** |
+| [docs/REPO_LAYOUT.md](docs/REPO_LAYOUT.md) | Monorepo map |
+| [docs/ROADMAP.md](docs/ROADMAP.md) | What ships when |
 
 ## Quick start
 
 ```bash
 cp .env.example .env
-docker compose up -d postgres redis temporal temporal-ui n8n
+docker compose up -d          # postgres, redis, temporal, n8n
 pnpm install
-pnpm db:generate
-pnpm db:migrate
+pnpm db:generate && pnpm db:migrate
+node scripts/seed-dev.mjs
+
 pnpm --filter @ai-workforce/api-gateway dev
 pnpm --filter @ai-workforce/agent-orchestrator dev
 pnpm --filter @ai-workforce/model-router dev
@@ -24,40 +33,34 @@ pnpm --filter @ai-workforce/realtime-service dev
 pnpm --filter @ai-workforce/web-app dev
 ```
 
-Set `SUPABASE_JWT_SECRET=dev-jwt-secret-change-me` in `.env` for local HS256 tokens.
+Dev JWT: `node scripts/generate-dev-jwt.mjs` (set `SUPABASE_JWT_SECRET=dev-jwt-secret-change-me`).
 
-### Dev JWT + smoke test
+## Layout (spine)
 
-```bash
-node scripts/generate-dev-jwt.mjs
+```txt
+apps/           web-app, api-gateway
+services/       orchestrator, model-router, realtime, temporal-worker, support-agent (vertical)
+packages/       database, shared, workflow-contracts, events, …
+infrastructure/ docker/ (compose), helm/, terraform/ (stubs)
+docs/           architecture, primitives, operator console, verticals
 ```
 
-Seed tenant/agent (via `psql` or Prisma Studio), then:
+## What runs today
 
-```bash
-curl http://localhost:4000/healthz
-curl -X POST http://localhost:4000/v1/agents \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Idempotency-Key: agent-1" \
-  -H "Content-Type: application/json" \
-  -d '{"name":"Support Agent","config":{}}'
-```
+- Tenant-scoped `/v1/runs` with idempotency
+- Run state machine + BullMQ (Temporal when available)
+- Model router with fallback + usage ledger
+- SSE run events
+- Operator console shell at http://localhost:3000/support
 
-## Architecture alignment
+## Strategic bets (documented, building next)
 
-| Spec area | Repo location |
-|-----------|----------------|
-| API gateway + `/v1/*` | `services/api-gateway` |
-| Run state machine | `services/agent-orchestrator` |
-| Model routing + fallback | `services/model-router` |
-| SSE run events | `services/realtime-service` |
-| Temporal lifecycle | `services/temporal-worker-service` |
-| Prisma MVP schema | `packages/database/prisma/schema.prisma` |
-| Shared contracts/auth | `packages/shared` |
+- [Operator controls](docs/OPERATOR_CONSOLE.md) — suspend, replay, DLQ
+- [Execution replay](docs/EXECUTION_REPLAY.md) — same graph, different providers
+- Planner / execution split per [manifesto](docs/MANIFESTO.md)
 
-## Phase 1 gaps (intentional)
+## Anti-patterns we avoid
 
-- Claude/Kimi/Ollama adapters stubbed beyond OpenAI + mock
-- Supabase RLS policies live in migrations (add `supabase/migrations` next)
-- n8n templates not wired until Phase 2 connector framework
-- Enterprise SAML/SCIM deferred
+- Fifteen half-built verticals before one works
+- Kubernetes-first onboarding
+- Synonym sprawl (`job` vs `run`) — see [PRIMITIVES](docs/PRIMITIVES.md)
