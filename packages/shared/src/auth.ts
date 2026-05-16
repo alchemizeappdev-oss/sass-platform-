@@ -4,7 +4,9 @@ export const authClaimsSchema = z.object({
   sub: z.string(),
   email: z.string().email().optional(),
   tenant_id: z.string().min(1),
-  role: z.enum(["owner", "admin", "member", "viewer"]).default("member"),
+  role: z
+    .enum(["owner", "admin", "operator", "viewer", "service_account"])
+    .default("operator"),
   scopes: z.array(z.string()).default([]),
 });
 
@@ -41,7 +43,7 @@ const roleScopes: Record<AuthClaims["role"], AuthScope[]> = {
     "admin:write",
     "billing:read",
   ],
-  member: [
+  operator: [
     "runs:read",
     "runs:write",
     "agents:read",
@@ -50,6 +52,14 @@ const roleScopes: Record<AuthClaims["role"], AuthScope[]> = {
     "workflows:write",
   ],
   viewer: ["runs:read", "agents:read", "workflows:read", "billing:read"],
+  service_account: [
+    "runs:read",
+    "runs:write",
+    "agents:read",
+    "agents:write",
+    "workflows:read",
+    "workflows:write",
+  ],
 };
 
 export function hasScope(claims: AuthClaims, required: AuthScope): boolean {
@@ -57,7 +67,6 @@ export function hasScope(claims: AuthClaims, required: AuthScope): boolean {
   return roleScopes[claims.role].includes(required);
 }
 
-/** Decode Supabase JWT payload (verify signature in gateway middleware). */
 export function decodeJwtPayload(token: string): unknown {
   const parts = token.split(".");
   if (parts.length !== 3) {
@@ -83,7 +92,7 @@ export function claimsFromJwtPayload(payload: unknown): AuthClaims {
     sub: record.sub,
     email: record.email,
     tenant_id: tenantId,
-    role: appMeta.role ?? "member",
+    role: appMeta.role ?? "operator",
     scopes: appMeta.scopes ?? [],
   });
 }
